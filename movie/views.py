@@ -5,6 +5,16 @@ import matplotlib.pyplot as plt
 import matplotlib
 import io
 import urllib, base64
+import numpy as np
+from openai import OpenAI
+import os
+from dotenv import load_dotenv
+
+load_dotenv('openAI.env')
+client = OpenAI(api_key=os.environ.get('openai_apikey'))
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 def home(request):
     #return HttpResponse('<h1>Welcome to the Movie Reviews Home Page!</h1>')
@@ -93,6 +103,36 @@ def statistics_view(request):
     return render(request, 'statistics.html', {
         'graphic': graphic,
         'graphic_genres': graphic_genres
-    }) 
+    })
 
-    
+def recommend(request):
+    recommended_movies = []
+    prompt = ""
+    if request.method == "POST":
+        prompt = request.POST.get("prompt", "")
+        if prompt:
+            # Generar embedding del prompt
+            response = client.embeddings.create(
+                input=[prompt],
+                model="text-embedding-3-small"
+            )
+            prompt_emb = np.array(response.data[0].embedding, dtype=np.float32)
+            
+            # Calcular similitudes para todas las películas
+            movies_with_similarity = []
+            for movie in Movie.objects.exclude(emb=None):
+                movie_emb = np.frombuffer(movie.emb, dtype=np.float32)
+                sim = cosine_similarity(prompt_emb, movie_emb)
+                movies_with_similarity.append((movie, sim))
+            
+            # Ordenar por similitud y tomar las top 5
+            movies_with_similarity.sort(key=lambda x: x[1], reverse=True)
+            recommended_movies = movies_with_similarity[:5]
+            
+    return render(request, "recommend.html", {
+        "prompt": prompt,
+        "recommended_movies": recommended_movies,
+    })
+
+
+
